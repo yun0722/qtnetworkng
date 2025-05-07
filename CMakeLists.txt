@@ -1,4 +1,4 @@
-# target_sources require cmake 3.1
+﻿# target_sources require cmake 3.1
 cmake_minimum_required(VERSION 3.1.0...3.17 FATAL_ERROR)
 
 project(qtnetworkng LANGUAGES C CXX ASM VERSION 1.0.0)
@@ -13,7 +13,7 @@ else()
 endif()
 
 find_package(Qt5Core CONFIG REQUIRED CMAKE_FIND_ROOT_PATH_BOTH)
-set(CMAKE_AUTOMOC OFF)
+set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC OFF)
 set(CMAKE_AUTORCC OFF)
 set(CMAKE_INCLUDE_CURRENT_DIR OFF)
@@ -52,6 +52,9 @@ set(QTNETWORKNG_SRC
     src/kcp/ikcp.h
 
     src/network_interface/network_interface.cpp
+
+    src/dns.cpp
+    src/dnsserver.cpp
 )
 
 qt5_wrap_cpp(QTNETWORKNG_SRC src/eventloop_qt_p.h)
@@ -82,6 +85,8 @@ set(QTNETWORKNG_INCLUDE
     include/network_interface.h
     include/gzip.h
     include/websocket.h
+    include/dns.h
+    include/dnsserver.h
 )
 
 set(QTNETWORKNG_PRIVATE_INCLUDE
@@ -92,6 +97,8 @@ set(QTNETWORKNG_PRIVATE_INCLUDE
     include/private/http_p.h
     include/private/hostaddress_p.h
     include/private/network_interface_p.h
+    include/private/dnsserver_p.h
+    include/private/dns_p.h
 )
 
 set(QTCRYPTONG_SRC
