@@ -8,3 +8,5 @@ website/
 
 /docs/_build
 /examples/coroutines/coroutines.pro.user
+/examples/mdns/build
+/tests/build

@@ -1,4 +1,4 @@
-#ifndef QTNG_QTNETWORKNG_H
+﻿#ifndef QTNG_QTNETWORKNG_H
 #define QTNG_QTNETWORKNG_H
 
 #include "coroutine.h"
@@ -19,6 +19,8 @@
 #include "network_interface.h"
 #include "websocket.h"
 #include "lmdb.h"
+#include "dns.h"
+#include "dnsserver.h"
 
 #ifndef QTNG_NO_CRYPTO
 #  include "ssl.h"
