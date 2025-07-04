@@ -622,6 +622,38 @@ inline T MultiQueueType<T, EventType, ReadWriteLockType>::tryWait()
     lock.unlock();
     return result;
 }
+class RingBufferPrivate;
+class RingBuffer{
+public:
+    explicit RingBuffer(quint32 capacity);
+    RingBuffer()
+        : RingBuffer(1024)
+    {
+
+    };
+    ~RingBuffer()
+    {
+
+    }
+    void setCapacity(quint32 capacity);
+    bool put(const char &c);
+    quint32 put(const QByteArray &c);
+    bool putForcedly(const char &c);
+    bool putForcedly(const QByteArray &c);
+    char get();
+    quint32 get(QByteArray &bytes,quint32 size = 0);
+    char peek();
+    quint32 peek(const QByteArray &res, quint32 size);
+    void clear();
+public:
+    inline bool isEmpty();
+    inline bool isFull();
+    inline quint32 capacity();
+    inline quint32 size();
+    inline bool contains(const char &c);
+private:
+    QSharedPointer<RingBufferPrivate> d;
+};
 
 QTNETWORKNG_NAMESPACE_END
 
