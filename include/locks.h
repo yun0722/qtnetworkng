@@ -622,6 +622,70 @@ inline T MultiQueueType<T, EventType, ReadWriteLockType>::tryWait()
     lock.unlock();
     return result;
 }
+class RingBufferPrivate;
+class RingBuffer{
+public:
+    explicit RingBuffer(quint32 capacity);//设置容量时请设置为2的幂次方，这能显著提升取模运算速度
+    RingBuffer()
+        : RingBuffer(1024)
+    {
+
+    };
+    ~RingBuffer()
+    {
+
+    }
+    void setCapacity(quint32 capacity);
+    bool put(const char &c);
+    quint32 put(const QByteArray &c);
+    bool putForcedly(const char &c);
+    bool putForcedly(const QByteArray &c);
+    char get();
+    quint32 get(QByteArray &bytes,quint32 size = 0);
+    char peek();
+    quint32 peek(QByteArray &res, quint32 size);
+    void clear();
+    bool isEmpty();
+    bool isFull();
+    quint32 capacity();
+    quint32 size();
+    bool contains(const char &c);
+private:
+    QSharedPointer<RingBufferPrivate> d;
+};
+class ThreadRingBuffer{
+public:
+    explicit ThreadRingBuffer(quint32 capacity);
+    ThreadRingBuffer()
+        : ThreadRingBuffer(1024)
+    {
+    };
+    ~ThreadRingBuffer(){
+    };
+    void setCapacity(quint32 capacity);
+    bool put(const char &c);
+    quint32 put(const QByteArray &c);
+    bool putForcedly(const char &c);
+    bool putForcedly(const QByteArray &c);
+    char get();
+    quint32 get(QByteArray &bytes,quint32 size = 0);
+    char peek();
+    quint32 peek(QByteArray &res, quint32 size);
+    void clear();
+    bool isEmpty();
+    bool isFull();
+    quint32 capacity();
+    quint32 size();
+    bool contains(const char &c);
+    quint32 getting();
+
+private:
+    RingBuffer buffers;
+    ThreadEvent notEmpty;
+    ThreadEvent notFull;
+    QReadWriteLock lock;
+    quint32 mCapacity;
+};
 
 QTNETWORKNG_NAMESPACE_END
 

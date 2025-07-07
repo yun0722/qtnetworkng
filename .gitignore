@@ -10,3 +10,5 @@ website/
 /examples/coroutines/coroutines.pro.user
 /examples/mdns/build
 /tests/build
+/.vs
+/examples/hello_httpd/build
