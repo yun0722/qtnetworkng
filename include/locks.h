@@ -6,6 +6,10 @@
 #include <QtCore/qsharedpointer.h>
 #include <QtCore/qreadwritelock.h>
 #include "coroutine.h"
+#include <QMutexLocker>
+#include <atomic>
+#include <algorithm>
+#include <qwaitcondition.h>
 
 QTNETWORKNG_NAMESPACE_BEGIN
 
@@ -679,12 +683,38 @@ public:
     bool contains(const char &c);
     quint32 getting();
 
-private:
+public:
     RingBuffer buffers;
     ThreadEvent notEmpty;
     ThreadEvent notFull;
     QReadWriteLock lock;
     quint32 mCapacity;
+};
+
+class LockFreeRingBuffer {
+public:
+    explicit LockFreeRingBuffer(size_t capacity);
+    LockFreeRingBuffer()
+        :LockFreeRingBuffer(1024){
+        };
+    void put(const QByteArray &data);
+    void putForcedly(const QByteArray &data);
+    QByteArray get();
+    QByteArray peek();
+    size_t size() const;
+    void clear();
+
+    inline bool isEmpty() const { return this->readPtr.loadAcquire() == this->writePtr.loadRelaxed(); };
+    inline bool isFull() const { return (this->writePtr.loadRelaxed() + 1 - this->readPtr.loadAcquire()) > mCapacity; };
+public:
+    ThreadEvent notEmpty;
+    ThreadEvent notFull;
+private:
+    quint32 mCapacity;
+    QVector<QByteArray> buffers;
+    quint32 mask = 0; // 索引掩
+    alignas(64) QAtomicInteger<quint32> readPtr;
+    alignas(64) QAtomicInteger<quint32> writePtr;
 };
 
 QTNETWORKNG_NAMESPACE_END

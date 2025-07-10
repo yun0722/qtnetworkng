@@ -457,7 +457,8 @@ public:
     qint32 takeBytes(QByteArray &localBuffer, int &offset, char * data, qint32 size, bool force);
 public:
     Pipe * const q_ptr;
-    ThreadQueue<QByteArray> queue;
+    //ThreadQueue<QByteArray> queue;
+    LockFreeRingBuffer queue;
     QAtomicInteger<bool> closed;
     const qint32 maxBufferSize;
     qint8 debugLevel;
