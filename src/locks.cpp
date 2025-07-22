@@ -1299,87 +1299,80 @@ quint32 ThreadRingBuffer::getting()
     const_cast<ThreadRingBuffer *>(this)->lock.unlock();
     return g;
 }
-
-void LockFreeRingBuffer::put(const QByteArray &data)
-{
-    while (isFull()) {
-        notFull.tryWait();
-    }
-    bool state = isEmpty();
-    const quint32 writeIndex = this->writePtr.loadRelaxed();
-    const quint32 nextWriteIndex = writeIndex + 1;
-    if (nextWriteIndex - this->readPtr.loadAcquire() > static_cast<quint32>(buffers.size())) {
-        this->readPtr.store(writeIndex);
-    }
-
-    buffers[writeIndex & this->mask] = std::move(data);;
-    this->writePtr.store(nextWriteIndex);
-
-    if (isFull()) {
-        notFull.clear();
-    }
-    if (state){
-        notEmpty.set();
-    }
-}
-void LockFreeRingBuffer::putForcedly(const QByteArray &data)
-{
-    const quint32 writeIndex = this->writePtr.loadRelaxed();
-    const quint32 nextWriteIndex = writeIndex + 1;
-
-    if (nextWriteIndex - this->readPtr.loadAcquire() > static_cast<quint32>(buffers.size())) {
-        this->readPtr.store(writeIndex);
-    }
-
-    buffers[writeIndex & this->mask] = std::move(data);;
-    this->writePtr.store(nextWriteIndex);
-    notEmpty.set();
-}
-QByteArray LockFreeRingBuffer::get()
-{
-    while (isEmpty()) {
-        notEmpty.tryWait();
-    }
-
-    const quint32 readIndex = this->readPtr.loadAcquire();
-    QByteArray data = std::move(buffers[readIndex & this->mask]);
-    this->readPtr.store(readIndex + 1);
-
-    if (isEmpty()) {
-        notEmpty.clear();
-    }
-    notFull.set();
-    return data;
-}
-QByteArray LockFreeRingBuffer::peek()
-{
-    if (isEmpty()) {
-        return QByteArray();
-    }
-    const quint32 readIndex = this->readPtr.loadAcquire();
-    return buffers[readIndex & this->mask];
-}
-size_t LockFreeRingBuffer::size() const
-{
-    return this->writePtr.loadRelaxed() - this->readPtr.loadAcquire();
-}
-void LockFreeRingBuffer::clear()
-{
-    this->readPtr.store(0);
-    this->writePtr.store(0);
-}
 LockFreeRingBuffer::LockFreeRingBuffer(size_t capacity)
     : mCapacity(capacity)
 {
-    // 确保容量为2的幂
     size_t size = 1;
-    while (size < capacity) {
+    while (size < capacity)
         size *= 2;
-    }
     buffers.resize(size);
-    this->mask = size - 1;
-    this->notEmpty.clear();
-    this->notFull.set();
+    mask = size - 1;
+    readPtr.store(0, std::memory_order_relaxed);
+    writePtr.store(0, std::memory_order_relaxed);
+    notEmpty.clear();
+    notFull.set();
 }
 
+void LockFreeRingBuffer::putForcedly(const QByteArray &data) {
+    quint32 writeIndex = writePtr.load(std::memory_order_relaxed);
+    quint32 readIndex = readPtr.load(std::memory_order_acquire);
+    quint32 nextWriteIndex = writeIndex + 1;
+
+    if (nextWriteIndex - readIndex > mCapacity) {
+        readPtr.store(readIndex + 1, std::memory_order_release);
+    }
+
+    buffers[writeIndex & mask] = std::move(data);
+    writePtr.store(nextWriteIndex, std::memory_order_release);
+    notEmpty.set();
+    if (writeIndex - readIndex < mCapacity) {
+        notFull.set();
+    }
+}
+
+bool LockFreeRingBuffer::put(const QByteArray &data) {
+    while (isFull()) {
+        notFull.wait();
+    }
+    quint32 writeIndex = writePtr.load(std::memory_order_relaxed);
+    bool wasFull = isFull();
+    buffers[writeIndex & mask] = data;
+    writePtr.store(writeIndex + 1, std::memory_order_release);
+
+    if (wasFull) notFull.set();
+    notEmpty.set();
+    return true;
+}
+
+QByteArray LockFreeRingBuffer::get() {
+    while (isEmpty()) {
+        notEmpty.wait();
+    }
+    quint32 readIndex = readPtr.load(std::memory_order_acquire);
+    bool wasFull = isFull();
+    QByteArray data = buffers[readIndex & mask];
+    readPtr.store(readIndex + 1, std::memory_order_release);
+
+    if (wasFull) notFull.set(); // 状态变化时触发
+    if (isEmpty()) notEmpty.clear();
+    return data;
+}
+
+QByteArray LockFreeRingBuffer::peek() {
+    quint32 readIndex = readPtr.load(std::memory_order_acquire);
+    return (readIndex != writePtr.load(std::memory_order_relaxed))
+            ? buffers[readIndex & mask]
+            : QByteArray();
+}
+
+size_t LockFreeRingBuffer::size() const {
+    return writePtr.load(std::memory_order_relaxed) - readPtr.load(std::memory_order_acquire);
+}
+
+void LockFreeRingBuffer::clear() {
+    readPtr.store(0, std::memory_order_relaxed);
+    writePtr.store(0, std::memory_order_relaxed);
+    notEmpty.clear();
+    notFull.set();
+}
 QTNETWORKNG_NAMESPACE_END

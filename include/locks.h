@@ -691,32 +691,36 @@ public:
     quint32 mCapacity;
 };
 
+
+// locks.h 中的 LockFreeRingBuffer 类修改
 class LockFreeRingBuffer {
 public:
     explicit LockFreeRingBuffer(size_t capacity);
-    LockFreeRingBuffer()
-        :LockFreeRingBuffer(1024){
-        };
-    void put(const QByteArray &data);
+    bool put(const QByteArray &data);
     void putForcedly(const QByteArray &data);
     QByteArray get();
     QByteArray peek();
     size_t size() const;
     void clear();
 
-    inline bool isEmpty() const { return this->readPtr.loadAcquire() == this->writePtr.loadRelaxed(); };
-    inline bool isFull() const { return (this->writePtr.loadRelaxed() + 1 - this->readPtr.loadAcquire()) > mCapacity; };
+    inline bool isEmpty() const {
+        return readPtr.load(std::memory_order_acquire) == writePtr.load(std::memory_order_relaxed);
+    }
+    inline bool isFull() const {
+        return (writePtr.load(std::memory_order_relaxed) + 1 - readPtr.load(std::memory_order_acquire)) > mCapacity;
+    }
+
 public:
     ThreadEvent notEmpty;
     ThreadEvent notFull;
-private:
+public:
     quint32 mCapacity;
     QVector<QByteArray> buffers;
-    quint32 mask = 0; // 索引掩
-    alignas(64) QAtomicInteger<quint32> readPtr;
-    alignas(64) QAtomicInteger<quint32> writePtr;
-};
+    quint32 mask;
+    alignas(64) std::atomic<quint32> readPtr;
+    alignas(64) std::atomic<quint32> writePtr;
 
+};
 QTNETWORKNG_NAMESPACE_END
 
 #endif  // QTNG_LOCKS_H

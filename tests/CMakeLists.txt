@@ -38,6 +38,10 @@ add_executable(test_ringbuffer test_ringbuffer.cpp)
 target_link_libraries(test_ringbuffer PRIVATE Qt5::Core Qt5::Test qtnetworkng)
 add_test(qtng_tests test_ringbuffer)
 
+add_executable(test_LockFreeRingbuffer test_lockFreeRingbuffer.cpp)
+target_link_libraries(test_LockFreeRingbuffer PRIVATE Qt5::Core Qt5::Test qtnetworkng)
+add_test(qtng_tests test_LockFreeRingbuffer)
+
 add_executable(test_threadringbuffer test_threadringbuffer.cpp)
 target_link_libraries(test_threadringbuffer PRIVATE Qt5::Core Qt5::Test qtnetworkng)
 add_test(qtng_tests test_threadringbuffer)
