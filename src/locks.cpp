@@ -839,466 +839,7 @@ bool Gate::tryWait(quint32 msecs /*= (UINT_MAX)*/)
         }
     }
 }
-class RingBufferPrivate{
-public:
-    explicit RingBufferPrivate(quint32 capacity = 1024);
-    ~RingBufferPrivate();
-    void setCapacity(quint32 capacity);
-    bool put(const char &c);
-    quint32 put(const QByteArray &c);
-    bool putForcedly(const char &c);
-    bool putForcedly(const QByteArray &c);
-    char get();
-    quint32 get(QByteArray &bytes,quint32 size = 0);
-    char peek();
-    quint32 peek(QByteArray &res, quint32 size);
-    void clear();
-public:
-    inline bool isEmpty();
-    inline bool isFull();
-    inline quint32 capacity();
-    inline quint32 size();
-    inline bool contains(const char &c);
-private:
-    QVector<char> buffers;
-    QAtomicInteger<quint32> readPtr = 0;
-    QAtomicInteger<quint32> writePtr = 0;
-    quint32 mCapacity;
-    quint32 mSize;
-};
 
-RingBufferPrivate::RingBufferPrivate(quint32 capacity)
-    : readPtr (0)
-    , writePtr (0)
-    , mCapacity (capacity)
-    , mSize (0)
-{
-    buffers.resize(mCapacity);
-}
-
-RingBufferPrivate::~RingBufferPrivate()
-{
-
-}
-
-void RingBufferPrivate::setCapacity(quint32 capacity)
-{
-    mCapacity = capacity;
-    buffers.resize(mCapacity);
-}
-
-bool RingBufferPrivate::put(const char &c)
-{
-    if (isFull()) {
-        return false;
-    }
-    buffers[writePtr] = c;
-    writePtr = (writePtr + 1) & (mCapacity - 1);
-    ++mSize;
-    return true;
-}
-
-quint32 RingBufferPrivate::put(const QByteArray &bytes)
-{
-    quint32 nums = 0;
-    for(auto c : bytes){
-        if(put(c)){
-            ++nums;
-            continue;
-        }
-        break;
-    }
-    return nums;
-}
-
-bool RingBufferPrivate::putForcedly(const char &c)
-{
-    buffers[writePtr] = c;
-    writePtr = (writePtr + 1) & (mCapacity -1);
-    mSize = mSize < mCapacity ? ++mSize : mSize;
-    return true;
-}
-
-bool RingBufferPrivate::putForcedly(const QByteArray &bytes)
-{
-    quint32 nums = 0;
-    for(auto c : bytes){
-        if(putForcedly(c)){
-            ++nums;
-            continue;
-        }
-        break;
-    }
-    return nums;
-}
-
-char RingBufferPrivate::get()
-{
-    if (isEmpty()){
-        return char();
-    }
-    char res = buffers.at(readPtr);
-    readPtr = (readPtr + 1) & (mCapacity - 1);
-    mSize--;
-    return res;
-}
-
-quint32 RingBufferPrivate::get(QByteArray &bytes, quint32 size)
-{
-    if (isEmpty()){
-        return 0;
-    }
-    quint32 nums = 0;
-    quint32 min = qMin(size, mSize);
-    QByteArray res;
-    for(;nums < min; nums++){
-        res += get();
-    }
-    bytes = res;
-    return nums;
-}
-
-char RingBufferPrivate::peek()
-{
-    if (isEmpty()){
-        return char();
-    }
-    return buffers[readPtr];
-}
-
-quint32 RingBufferPrivate::peek(QByteArray &res, quint32 size)
-{
-    if (isEmpty()){
-        return 0;
-    }
-    QByteArray b;
-    quint32 nums = 0;
-    quint32 read = readPtr;
-    quint32 min = qMin(mSize,size);
-    while (true){
-        if (nums < min){
-            b += buffers[read];
-            read = (read + 1) & (mCapacity - 1);
-            ++nums;
-            continue;
-        }
-        break;
-    }
-    res = b;
-    return nums;
-}
-
-void RingBufferPrivate::clear()
-{
-    readPtr = 0;
-    writePtr = 0;
-    mSize = 0;
-}
-
-bool RingBufferPrivate::isEmpty()
-{
-    return mSize == 0;
-}
-
-bool RingBufferPrivate::isFull()
-{
-    return mSize == mCapacity;
-}
-
-quint32 RingBufferPrivate::capacity()
-{
-    return this->mCapacity;
-}
-
-quint32 RingBufferPrivate::size()
-{
-    return mSize;
-}
-
-bool RingBufferPrivate::contains(const char &c)
-{
-    return buffers.contains(c);
-}
-
-RingBuffer::RingBuffer(quint32 capacity)
-    : d (new RingBufferPrivate(capacity))
-{
-
-}
-
-void RingBuffer::setCapacity(quint32 capacity)
-{
-    d->setCapacity(capacity);
-}
-
-bool RingBuffer::put(const char &c)
-{
-    return d->put(c);
-}
-
-quint32 RingBuffer::put(const QByteArray &c)
-{
-    return d->put(c);
-}
-
-bool RingBuffer::putForcedly(const char &c)
-{
-    return d->putForcedly(c);
-}
-
-bool RingBuffer::putForcedly(const QByteArray &c)
-{
-    return d->putForcedly(c);
-}
-
-char RingBuffer::get()
-{
-    return d->get();
-}
-
-quint32 RingBuffer::get(QByteArray &bytes, quint32 size)
-{
-    return d->get(bytes,size);
-}
-
-char RingBuffer::peek()
-{
-    return d->peek();
-}
-
-quint32 RingBuffer::peek(QByteArray &res, quint32 size)
-{
-    return d->peek(res,size);
-}
-
-void RingBuffer::clear()
-{
-    d->clear();
-}
-
-bool RingBuffer::isEmpty()
-{
-    return d->isEmpty();
-}
-
-bool RingBuffer::isFull()
-{
-    return d->isFull();
-}
-
-quint32 RingBuffer::capacity()
-{
-    return d->capacity();
-}
-
-quint32 RingBuffer::size()
-{
-    return d->size();
-}
-
-bool RingBuffer::contains(const char &c)
-{
-    return d->contains(c);
-}
-
-ThreadRingBuffer::ThreadRingBuffer(quint32 capacity)
-    : mCapacity(capacity)
-{
-    Q_ASSERT((capacity & (capacity - 1)) == 0);
-    buffers.setCapacity(mCapacity);
-    notEmpty.clear();
-    notFull.set();
-}
-
-void ThreadRingBuffer::setCapacity(quint32 capacity)
-{
-    lock.lockForWrite();
-    this->mCapacity = capacity;
-    if (static_cast<quint32>(buffers.size()) >= mCapacity) {
-        notFull.clear();
-    } else {
-        notFull.set();
-    }
-    lock.unlock();
-}
-
-bool ThreadRingBuffer::put(const char &c)
-{
-    lock.lockForWrite();
-    if (buffers.size() < mCapacity) {
-        buffers.put(c);
-        notEmpty.set();
-        if (buffers.size() >= mCapacity) {
-            notFull.clear();
-        }
-        lock.unlock();
-        return true;
-    }
-    lock.unlock();
-    notFull.wait();
-    return put(c);
-}
-
-quint32 ThreadRingBuffer::put(const QByteArray &bytes)
-{
-    quint32 total = 0;
-    for (int i = 0; i < bytes.size(); ++i) {
-        if (put(bytes[i])) {
-            ++total;
-        } else {
-            break;
-        }
-    }
-    return total;
-}
-
-bool ThreadRingBuffer::putForcedly(const char &c)
-{
-    lock.lockForWrite();
-    buffers.putForcedly(c);
-    notEmpty.set();
-    if (static_cast<quint32>(buffers.size()) >= mCapacity) {
-        notFull.clear();
-    }
-    lock.unlock();
-    return true;
-}
-
-bool ThreadRingBuffer::putForcedly(const QByteArray &c)
-{
-    lock.lockForWrite();
-    buffers.putForcedly(c);;
-    notEmpty.set();
-    if (static_cast<quint32>(buffers.size()) >= mCapacity) {
-        notFull.clear();
-    }
-    lock.unlock();
-    return true;
-}
-
-char ThreadRingBuffer::get()
-{
-    char result;
-    while (true) {
-        lock.lockForWrite();
-        if (!buffers.isEmpty()) {
-            result = buffers.get();
-            if (buffers.isEmpty()) {
-                notEmpty.clear();
-            }
-            notFull.set();
-            lock.unlock();
-            return result;
-        }
-        lock.unlock();
-        notEmpty.wait();
-    }
-}
-
-quint32 ThreadRingBuffer::get(QByteArray &bytes, quint32 size)
-{
-    do {
-        if (!notEmpty.tryWait()){
-            return 0;
-        }
-        lock.lockForWrite();
-        if (!this->buffers.isEmpty()){
-            break;
-        }
-        lock.unlock();
-    } while(true);
-
-    const quint32 &res = buffers.get(bytes,size);
-    if (this->buffers.isEmpty()){
-        notEmpty.clear();
-    }
-    if (static_cast<quint32>(buffers.size()) < mCapacity){
-        notFull.set();
-    }
-    lock.unlock();
-    return res;
-}
-
-char ThreadRingBuffer::peek()
-{
-    lock.lockForRead();
-    if (this->buffers.isEmpty()){
-        lock.unlock();
-        return char();
-    }
-    const char &c = buffers.peek();
-    lock.unlock();
-    return c;
-}
-
-quint32 ThreadRingBuffer::peek(QByteArray &bytes, quint32 size)
-{
-    lock.lockForRead();
-    if (this->buffers.isEmpty()){
-        lock.unlock();
-        return 0;
-    }
-    const quint32 &res = buffers.peek(bytes, size);
-    lock.unlock();
-    return res;
-}
-
-void ThreadRingBuffer::clear()
-{
-    lock.lockForWrite();
-    this->buffers.clear();
-    notFull.set();
-    notEmpty.clear();
-    lock.unlock();
-}
-
-bool ThreadRingBuffer::isEmpty()
-{
-    lock.lockForRead();
-    bool t = buffers.isEmpty();
-    lock.unlock();
-    return t;
-}
-
-bool ThreadRingBuffer::isFull()
-{
-    lock.lockForRead();
-    bool t = static_cast<quint32>(buffers.size()) >= mCapacity;
-    lock.unlock();
-    return t;
-}
-
-quint32 ThreadRingBuffer::capacity()
-{
-    const_cast<ThreadRingBuffer *>(this)->lock.lockForRead();
-    quint32 c =mCapacity;
-    const_cast<ThreadRingBuffer *>(this)->lock.unlock();
-    return c;
-}
-
-quint32 ThreadRingBuffer::size()
-{
-    const_cast<ThreadRingBuffer *>(this)->lock.lockForRead();
-    quint32 res = buffers.size();
-    const_cast<ThreadRingBuffer *>(this)->lock.unlock();
-    return res;
-}
-
-bool ThreadRingBuffer::contains(const char &c)
-{
-    const_cast<ThreadRingBuffer *>(this)->lock.lockForRead();
-    bool t = buffers.contains(c);
-    const_cast<ThreadRingBuffer *>(this)->lock.unlock();
-    return t;
-}
-
-quint32 ThreadRingBuffer::getting()
-{
-    const_cast<ThreadRingBuffer *>(this)->lock.lockForRead();
-    int g = notEmpty.getting();
-    const_cast<ThreadRingBuffer *>(this)->lock.unlock();
-    return g;
-}
 LockFreeRingBuffer::LockFreeRingBuffer(size_t capacity)
     : mCapacity(capacity)
 {
@@ -1375,4 +916,148 @@ void LockFreeRingBuffer::clear() {
     notEmpty.clear();
     notFull.set();
 }
+
+RingBuffer::RingBuffer(size_t capacity)
+    : mCapacity(capacity)
+    , mask(capacity-1)
+{
+    buffers.resize(capacity);
+    readPtr.store(0, std::memory_order_relaxed);
+    writePtr.store(0, std::memory_order_relaxed);
+}
+
+bool RingBuffer::put(char data)
+{
+    if (isFull()){
+        return false;
+    }
+    quint32 writeIndex = writePtr.load(std::memory_order_relaxed);
+    buffers[writeIndex & mask] = std::move(data);
+    writePtr.store(writeIndex + 1, std::memory_order_release);
+    return true;
+}
+
+void RingBuffer::putForcedly(const QByteArray &data)
+{
+    quint32 writeIndex = writePtr.load(std::memory_order_relaxed);
+    quint32 readIndex = readPtr.load(std::memory_order_acquire);
+    quint32 newWriteIndex = writeIndex + data.size();
+
+    if (newWriteIndex - readIndex > mCapacity) {
+        readPtr.store(newWriteIndex - mCapacity, std::memory_order_release);
+    }
+
+    for (const char & c : data){
+        buffers[writeIndex & mask] = c;
+        writeIndex++;
+    }
+    writePtr.store(writeIndex, std::memory_order_release);
+}
+
+char RingBuffer::get()
+{
+    if (isEmpty()){
+        return char();
+    }
+    quint32 readIndex = readPtr.load(std::memory_order_acquire);
+    char data = buffers[readIndex & mask];
+    readPtr.store(readIndex + 1, std::memory_order_release);
+    return data;
+}
+
+QByteArray RingBuffer::peek()
+{
+    if (isEmpty()){
+        return QByteArray();
+    }
+    QByteArray res;
+    quint32 readIndex = readPtr.load(std::memory_order_acquire);
+    for (int i=0;i<size();i++){
+        res += buffers[readIndex & mask];
+        readIndex++;
+    }
+    return res;
+}
+
+size_t RingBuffer::size() const
+{
+    return writePtr.load(std::memory_order_relaxed) - readPtr.load(std::memory_order_acquire);
+}
+
+void RingBuffer::clear()
+{
+    readPtr.store(0, std::memory_order_relaxed);
+    writePtr.store(0, std::memory_order_relaxed);
+}
+
+void RingBuffer::setCapacity(quint32 capacity)
+{
+    mCapacity = capacity;
+    mask = mCapacity - 1;
+    buffers.resize(capacity);
+}
+
+RingBuffer::~RingBuffer()
+{
+}
+
+ThreadRingBuffer::ThreadRingBuffer(size_t capacity)
+    :buffers(capacity)
+{
+    notEmpty.clear();
+    notFull.set();
+}
+
+bool ThreadRingBuffer::put(QByteArray data)
+{
+    for (const char c : data){
+        if (isFull()){
+            notFull.wait();
+        }
+        buffers.put(c);
+        notEmpty.set();
+        if (isFull()){
+            notFull.clear();
+        }
+    }
+    return true;
+}
+
+void ThreadRingBuffer::putForcedly(const QByteArray &data)
+{
+    buffers.putForcedly(data);
+}
+
+QByteArray ThreadRingBuffer::get()
+{
+    if (isEmpty()){
+        notEmpty.wait();
+    }
+    quint32 size = buffers.size();
+    QByteArray res;
+    for (int i=0;i<size;i++){
+        res += buffers.get();
+        notFull.set();
+    }
+    if (isEmpty()) {
+        notEmpty.clear();
+    }
+    return res;
+}
+
+QByteArray ThreadRingBuffer::peek()
+{
+    return buffers.peek();
+}
+
+size_t ThreadRingBuffer::size() const
+{
+    return buffers.size();
+}
+
+void ThreadRingBuffer::clear()
+{
+    return buffers.clear();
+}
+
 QTNETWORKNG_NAMESPACE_END

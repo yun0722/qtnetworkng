@@ -9,177 +9,261 @@
 #include <QMutex>
 #include <QWaitCondition>
 #include <QSharedPointer>
-using namespace qtng;
+#include <QtTest>
+#include <QByteArray>
+#include <QtMath>
 
+using namespace qtng;
 class TestRingBuffer : public QObject
 {
     Q_OBJECT
 
-private:
-    const quint32 TEST_CAPACITY = 1024; // 2^10 幂次方容量
-    RingBuffer* buffer;
-
 private slots:
-    // 测试初始化与清理
-    void initTestCase() {
-        buffer = new RingBuffer(TEST_CAPACITY);
-    }
-    void cleanupTestCase() {
-        delete buffer;
-    }
-    void init() {
-        buffer->clear();
-    }
+    // 基础功能测试
+    void testInitialization();
+    void testBasicPutGet();
+    void testIsEmpty();
+    void testIsFull();
+    void testSizeCalculation();
+    void testClear();
 
-            // 核心功能测试
-    void testEmptyBuffer();
-    void testSingleChar();
-    void testBoundaryConditions();
-    void testFullCapacity();
-    void testPeekFunction();
-    void testForcedOverwrite();
-    void testDataContains();
-    void testBufferClear();
-    void testCapacityChange();
+            // 边界条件测试
+    void testFullBuffer();
+    void testFullBufferPutForcedly();
+    void testEmptyBufferGet();
+    void testPeekBehavior();
+
+            // 特殊操作测试
+    void testPutForcedlyOverCapacity();
+    void testCircularWrapAround();
 };
 
-// === 测试用例实现 ===
-void TestRingBuffer::testEmptyBuffer() {
-    QVERIFY(buffer->isEmpty());
-    QVERIFY(!buffer->isFull());
-    QCOMPARE(buffer->size(), 0u);
-    QCOMPARE(buffer->capacity(), TEST_CAPACITY);
-
-            // 空缓冲区读取应返回空值
-    QCOMPARE(buffer->get(), char());
-    QByteArray data;
-    QCOMPARE(buffer->get(data, 10), 0u);
+// 辅助函数：检查是否为2的幂次方
+bool isPowerOfTwo(size_t n) {
+    return (n != 0) && ((n & (n - 1)) == 0);
 }
 
-void TestRingBuffer::testSingleChar() {
-    // 验证单字符写入/读取
-    char testChar = 'A';
-    QVERIFY(buffer->put(testChar));
-    QCOMPARE(buffer->size(), 1u);
-    QVERIFY(!buffer->isEmpty());
+void TestRingBuffer::testInitialization()
+{
+    // 测试非2的幂次方容量
+    const size_t requestedCapacity = 5;
+    const size_t expectedCapacity = 8;  // 大于5的最小2的幂次方
 
-            // Peek验证不改变指针
-    QCOMPARE(buffer->peek(), testChar);
-    QCOMPARE(buffer->size(), 1u);
+    RingBuffer buffer(requestedCapacity);
 
-            // 读取验证
-    QCOMPARE(buffer->get(), testChar);
-    QVERIFY(buffer->isEmpty());
+    QVERIFY(buffer.isEmpty());
+    QVERIFY(!buffer.isFull());
+    QCOMPARE(buffer.size(), 0);
+    QVERIFY(buffer.peek().isEmpty());
+
+    // 验证实际容量是2的幂次方
+    QVERIFY(isPowerOfTwo(expectedCapacity));
+    QVERIFY(buffer.isFull() == false);
 }
 
-void TestRingBuffer::testBoundaryConditions() {
-    // 边界循环测试（写指针回绕）
-    QByteArray data(TEST_CAPACITY / 2, 'B');
-    quint32 written = buffer->put(data);
-    QCOMPARE(written, TEST_CAPACITY / 2);
+void TestRingBuffer::testBasicPutGet()
+{
+    // 使用2的幂次方容量
+    const size_t capacity = 4;  // 2^2
+    RingBuffer buffer(capacity);
 
-            // 读取部分数据触发回绕条件
-    QByteArray output;
-    quint32 read = buffer->get(output, TEST_CAPACITY / 4);
-    QCOMPARE(read, TEST_CAPACITY / 4);
+    // 测试基本写入和读取
+    QVERIFY(buffer.put('a'));
+    QVERIFY(buffer.put('b'));
+    QVERIFY(buffer.put('c'));
+    QVERIFY(buffer.put('d'));  // 刚好填满
 
-            // 继续写入直到超过容量
-    QByteArray newData(TEST_CAPACITY, 'C');
-    written = buffer->put(newData);
-    QCOMPARE(written, TEST_CAPACITY - (TEST_CAPACITY / 4)); // 剩余空间
+    QCOMPARE(buffer.get(), 'a');
+    QCOMPARE(buffer.get(), 'b');
+    QCOMPARE(buffer.get(), 'c');
+    QCOMPARE(buffer.get(), 'd');
 }
 
-void TestRingBuffer::testFullCapacity() {
+void TestRingBuffer::testIsEmpty()
+{
+    const size_t capacity = 4;  // 2^2
+    RingBuffer buffer(capacity);
+
+    QVERIFY(buffer.isEmpty());
+    buffer.put('x');
+    QVERIFY(!buffer.isEmpty());
+    buffer.get();
+    QVERIFY(buffer.isEmpty());
+}
+
+void TestRingBuffer::testIsFull()
+{
+    const size_t capacity = 4;  // 2^2
+    RingBuffer buffer(capacity);
+
+    QVERIFY(!buffer.isFull());
+    buffer.put('a');
+    QVERIFY(!buffer.isFull());
+    buffer.put('b');
+    QVERIFY(!buffer.isFull());
+    buffer.put('c');
+    QVERIFY(!buffer.isFull());
+    buffer.put('d');
+    QVERIFY(buffer.isFull());
+    buffer.get();
+    QVERIFY(!buffer.isFull());
+}
+
+void TestRingBuffer::testSizeCalculation()
+{
+    const size_t capacity = 8;  // 2^3
+    RingBuffer buffer(capacity);
+
+    QCOMPARE(buffer.size(), 0);
+    buffer.put('a');
+    QCOMPARE(buffer.size(), 1);
+    buffer.put('b');
+    QCOMPARE(buffer.size(), 2);
+    buffer.get();
+    QCOMPARE(buffer.size(), 1);
+    buffer.get();
+    QCOMPARE(buffer.size(), 0);
+}
+
+void TestRingBuffer::testClear()
+{
+    const size_t capacity = 4;  // 2^2
+    RingBuffer buffer(capacity);
+
+    buffer.put('a');
+    buffer.put('b');
+    buffer.clear();
+
+    QVERIFY(buffer.isEmpty());
+    QCOMPARE(buffer.size(), 0);
+    QVERIFY(buffer.peek().isEmpty());
+}
+
+void TestRingBuffer::testFullBuffer()
+{
+    const size_t capacity = 4;  // 2^2
+    RingBuffer buffer(capacity);
+
+    QVERIFY(buffer.put('a'));
+    QVERIFY(buffer.put('b'));
+    QVERIFY(buffer.put('c'));
+    QVERIFY(buffer.put('d'));  // 填满
+
+    // 尝试在满时添加新元素应失败
+    QVERIFY(!buffer.put('e'));
+
+    QCOMPARE(buffer.get(), 'a');  // 取出一个元素
+    QVERIFY(buffer.put('e'));    // 现在应该成功添加
+    QCOMPARE(buffer.get(), 'b');
+    QCOMPARE(buffer.get(), 'c');
+    QCOMPARE(buffer.get(), 'd');
+    QCOMPARE(buffer.get(), 'e');
+}
+
+void TestRingBuffer::testFullBufferPutForcedly()
+{
+    const size_t capacity = 4;  // 2^2
+    RingBuffer buffer(capacity);
+
     // 填满缓冲区
-    QByteArray data(TEST_CAPACITY, 'D');
-    quint32 written = buffer->put(data);
-    QCOMPARE(written, TEST_CAPACITY);
-    QVERIFY(buffer->isFull());
-    QCOMPARE(buffer->size(), TEST_CAPACITY);
+    buffer.put('a');
+    buffer.put('b');
+    buffer.put('c');
+    buffer.put('d');
 
-            // 满时写入失败
-    QVERIFY(!buffer->put('X'));
+    QVERIFY(buffer.isFull());
 
-            // 读取所有数据
-    QByteArray output;
-    quint32 read = buffer->get(output, TEST_CAPACITY + 100);
-    QCOMPARE(read, TEST_CAPACITY);
-    QVERIFY(buffer->isEmpty());
-}
+    // 使用putForcedly添加更多数据
+    QByteArray extraData = "efg";
+    buffer.putForcedly(extraData);
 
-void TestRingBuffer::testPeekFunction() {
-    // 多字符peek测试
-    QByteArray input = "TestPeek";
-    qDebug()<<"size:"<<buffer->put(input);
-            // Peek不改变缓冲区状态
-    QByteArray peekResult;
-    quint32 peekSize = buffer->peek(peekResult, 4);
-    QCOMPARE(peekSize, 4u);
-    QCOMPARE(peekResult.constData(), "Test");
-    QCOMPARE(buffer->size(), input.size());
-
-            // 完整读取验证
-    QByteArray fullRead;
-    buffer->get(fullRead, input.size());
-    QCOMPARE(fullRead, input);
-}
-
-void TestRingBuffer::testForcedOverwrite() {
-    // 填满缓冲区
-    buffer->clear();
-    buffer->setCapacity(TEST_CAPACITY);
-    QByteArray initialData(TEST_CAPACITY, 'A');
-    buffer->put(initialData);
-
-            // 强制写入覆盖旧数据
-    QByteArray overwriteData = "Forced";
-    buffer->putForcedly(overwriteData);
-    QByteArray bytes;
-            // 验证新数据存在且长度不变
-    QVERIFY(buffer->contains('F'));
-    QCOMPARE(buffer->size(), TEST_CAPACITY);
-
-            // 读取数据验证覆盖顺序
-    QByteArray readData;
-    buffer->get(readData, TEST_CAPACITY);
-    QVERIFY(readData.startsWith("Forced")); // 原始数据被覆盖
-    QVERIFY(readData.endsWith("A"));        // 未覆盖部分保留
-}
-
-void TestRingBuffer::testDataContains() {
-    // 填充测试数据
-    QByteArray data = "SearchTest";
-    buffer->put(data);
-
-            // 存在性验证
-    QVERIFY(buffer->contains('S'));
-    QVERIFY(buffer->contains('T'));
-    QVERIFY(!buffer->contains('X')); // 不存在字符
+    // 验证数据被覆盖（环形行为）
+    QCOMPARE(buffer.get(), 'd');
+    QCOMPARE(buffer.get(), 'e');  // 最旧的数据被覆盖
+    QCOMPARE(buffer.get(), 'f');
+    QCOMPARE(buffer.get(), 'g');
 
 }
 
-void TestRingBuffer::testBufferClear() {
-    // 填充后清除
-    buffer->put(QByteArray(100, 'G'));
-    buffer->clear();
+void TestRingBuffer::testEmptyBufferGet()
+{
+    const size_t capacity = 4;  // 2^2
+    RingBuffer buffer(capacity);
 
-    QVERIFY(buffer->isEmpty());
-    QCOMPARE(buffer->size(), 0u);
-    QCOMPARE(buffer->capacity(), TEST_CAPACITY); // 容量不变
+    // 空缓冲区读取应该返回空字符
+    QCOMPARE(buffer.get(), '\0');
 }
 
-void TestRingBuffer::testCapacityChange() {
-    // 动态调整容量
-    const quint32 newCapacity = 2048; // 2^11
-    buffer->setCapacity(newCapacity);
-    QCOMPARE(buffer->capacity(), newCapacity);
-    QVERIFY(buffer->isEmpty());
+void TestRingBuffer::testPeekBehavior()
+{
+    const size_t capacity = 4;  // 2^2
+    RingBuffer buffer(capacity);
 
-            // 验证新容量可用性
-    QByteArray largeData(newCapacity, 'H');
-    quint32 written = buffer->put(largeData);
-    QCOMPARE(written, newCapacity);
-    QVERIFY(buffer->isFull());
+    buffer.put('a');
+    buffer.put('b');
+
+    QByteArray peekResult = buffer.peek();
+    QCOMPARE(peekResult, QByteArray("ab"));
+
+    // 确保peek不改变状态
+    QCOMPARE(buffer.get(), 'a');
+    QCOMPARE(buffer.get(), 'b');
+}
+
+void TestRingBuffer::testPutForcedlyOverCapacity()
+{
+    const size_t capacity = 4;  // 2^2
+    RingBuffer buffer(capacity);
+
+    QByteArray largeData = "abcdefgh";  // 8个字符，两倍于容量
+    buffer.putForcedly(largeData);
+
+    // 验证只保留了最后4个字符（环形覆盖）
+    QCOMPARE(buffer.get(), 'e');
+    QCOMPARE(buffer.get(), 'f');
+    QCOMPARE(buffer.get(), 'g');
+    QCOMPARE(buffer.get(), 'h');
+
+    // 现在缓冲区应该为空
+    QVERIFY(buffer.isEmpty());
+    QCOMPARE(buffer.size(), 0);
+
+    // 再次读取应该得到空字符
+    QCOMPARE(buffer.get(), '\0');
+    // 并且仍然为空
+    QVERIFY(buffer.isEmpty());
+}
+
+void TestRingBuffer::testCircularWrapAround()
+{
+    const size_t capacity = 4;  // 2^2
+    RingBuffer buffer(capacity);
+
+    // 填充缓冲区
+    buffer.put('a');
+    buffer.put('b');
+    buffer.put('c');
+    buffer.put('d');
+
+    // 读取部分数据
+    QCOMPARE(buffer.get(), 'a');
+    QCOMPARE(buffer.get(), 'b');
+
+    // 添加新数据（应该循环使用空间）
+    buffer.put('e');
+    buffer.put('f');
+
+    QCOMPARE(buffer.size(), 4);
+    QVERIFY(buffer.isFull());
+
+    // 验证顺序和内容
+    QCOMPARE(buffer.get(), 'c');
+    QCOMPARE(buffer.get(), 'd');
+    QCOMPARE(buffer.get(), 'e');
+    QCOMPARE(buffer.get(), 'f');
+
+    // 缓冲区应为空
+    QVERIFY(buffer.isEmpty());
 }
 
 QTEST_APPLESS_MAIN(TestRingBuffer)

@@ -626,71 +626,51 @@ inline T MultiQueueType<T, EventType, ReadWriteLockType>::tryWait()
     lock.unlock();
     return result;
 }
-class RingBufferPrivate;
 class RingBuffer{
 public:
-    explicit RingBuffer(quint32 capacity);//设置容量时请设置为2的幂次方，这能显著提升取模运算速度
-    RingBuffer()
-        : RingBuffer(1024)
-    {
-
-    };
-    ~RingBuffer()
-    {
-
+    explicit RingBuffer(size_t capacity);
+    inline bool isEmpty() const {
+        return readPtr.load(std::memory_order_acquire) == writePtr.load(std::memory_order_relaxed);
     }
-    void setCapacity(quint32 capacity);
-    bool put(const char &c);
-    quint32 put(const QByteArray &c);
-    bool putForcedly(const char &c);
-    bool putForcedly(const QByteArray &c);
+    inline bool isFull() const {
+        return (writePtr.load(std::memory_order_relaxed) + 1 - readPtr.load(std::memory_order_acquire)) > mCapacity;
+    }
+    bool put(char data);
+    void putForcedly(const QByteArray &data);
     char get();
-    quint32 get(QByteArray &bytes,quint32 size = 0);
-    char peek();
-    quint32 peek(QByteArray &res, quint32 size);
+    QByteArray peek();
+    size_t size() const;
     void clear();
-    bool isEmpty();
-    bool isFull();
-    quint32 capacity();
-    quint32 size();
-    bool contains(const char &c);
+    void setCapacity(quint32 capacity);
+    ~RingBuffer();
 private:
-    QSharedPointer<RingBufferPrivate> d;
+    quint32 mCapacity;
+    QVector<char> buffers;
+    quint32  mask;
+    alignas(64) std::atomic<quint32> readPtr;
+    alignas(64) std::atomic<quint32> writePtr;
 };
 class ThreadRingBuffer{
 public:
-    explicit ThreadRingBuffer(quint32 capacity);
-    ThreadRingBuffer()
-        : ThreadRingBuffer(1024)
-    {
-    };
-    ~ThreadRingBuffer(){
-    };
-    void setCapacity(quint32 capacity);
-    bool put(const char &c);
-    quint32 put(const QByteArray &c);
-    bool putForcedly(const char &c);
-    bool putForcedly(const QByteArray &c);
-    char get();
-    quint32 get(QByteArray &bytes,quint32 size = 0);
-    char peek();
-    quint32 peek(QByteArray &res, quint32 size);
+    explicit ThreadRingBuffer(size_t capacity = 1024);
+    inline bool isEmpty(){
+        return buffers.isEmpty();
+    }
+    inline bool isFull(){
+        return buffers.isFull();
+    }
+    bool put(QByteArray data);
+    void putForcedly(const QByteArray &data);
+    QByteArray get();
+    QByteArray peek();
+    size_t size() const;
     void clear();
-    bool isEmpty();
-    bool isFull();
-    quint32 capacity();
-    quint32 size();
-    bool contains(const char &c);
-    quint32 getting();
-
 public:
-    RingBuffer buffers;
     ThreadEvent notEmpty;
     ThreadEvent notFull;
-    QReadWriteLock lock;
-    quint32 mCapacity;
+private:
+    RingBuffer buffers;
 };
-
 
 // locks.h 中的 LockFreeRingBuffer 类修改
 class LockFreeRingBuffer {

@@ -458,7 +458,8 @@ public:
 public:
     Pipe * const q_ptr;
     //ThreadQueue<QByteArray> queue;
-    LockFreeRingBuffer queue;
+    //LockFreeRingBuffer queue;
+    ThreadRingBuffer queue;
     QAtomicInteger<bool> closed;
     const qint32 maxBufferSize;
     qint8 debugLevel;
