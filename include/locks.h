@@ -650,25 +650,36 @@ private:
     alignas(64) std::atomic<quint32> readPtr;
     alignas(64) std::atomic<quint32> writePtr;
 };
-class ThreadRingBuffer{
+
+class ThreadRingBuffer {
 public:
     explicit ThreadRingBuffer(size_t capacity = 1024);
-    inline bool isEmpty(){
-        return buffers.isEmpty();
-    }
-    inline bool isFull(){
-        return buffers.isFull();
-    }
-    bool put(QByteArray data);
+    ~ThreadRingBuffer();
+
+    bool put(const QByteArray &data);
     void putForcedly(const QByteArray &data);
-    QByteArray get();
+    QByteArray get(quint32 maxSize = UINT_MAX); // 添加maxSize参数控制读取量
     QByteArray peek();
     size_t size() const;
     void clear();
+
+    inline bool isEmpty() const
+    {
+        QMutexLocker locker(&mutex);
+        return buffers.isEmpty();
+    }
+    inline bool isFull() const
+    {
+        QMutexLocker locker(&mutex);
+        return buffers.isFull();
+    }
+
 public:
-    ThreadEvent notEmpty;
-    ThreadEvent notFull;
+    QWaitCondition notEmptyCond;
+    QWaitCondition notFullCond;
+    int nowBlockSize;
 private:
+    mutable QMutex mutex;
     RingBuffer buffers;
 };
 

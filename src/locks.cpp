@@ -1000,24 +1000,37 @@ void RingBuffer::setCapacity(quint32 capacity)
 RingBuffer::~RingBuffer()
 {
 }
-
+// 实现文件中的修改
 ThreadRingBuffer::ThreadRingBuffer(size_t capacity)
-    :buffers(capacity)
+    : buffers(capacity)
 {
-    notEmpty.clear();
-    notFull.set();
+   // 初始化时缓冲区为空
 }
 
-bool ThreadRingBuffer::put(QByteArray data)
+ThreadRingBuffer::~ThreadRingBuffer()
 {
-    for (const char c : data){
-        if (isFull()){
-            notFull.wait();
+   // 自动清理
+}
+
+bool ThreadRingBuffer::put(const QByteArray &data)
+{
+    QMutexLocker locker(&mutex);
+
+    // 逐字节处理数据
+    for (const char c : data) {
+        // 等待缓冲区有空间
+        while (buffers.isFull()) {
+            if (!notFullCond.wait(&mutex, 100)) { // 添加超时避免永久阻塞
+                return false; // 超时返回失败
+            }
         }
+
+        // 安全添加数据
         buffers.put(c);
-        notEmpty.set();
-        if (isFull()){
-            notFull.clear();
+
+        // 通知可能等待的消费者
+        if (buffers.size() == 1) {
+            notEmptyCond.wakeAll();
         }
     }
     return true;
@@ -1025,39 +1038,65 @@ bool ThreadRingBuffer::put(QByteArray data)
 
 void ThreadRingBuffer::putForcedly(const QByteArray &data)
 {
+    QMutexLocker locker(&mutex);
     buffers.putForcedly(data);
+
+    // 通知消费者有新数据
+    if (!buffers.isEmpty()) {
+        notEmptyCond.wakeAll();
+    }
 }
 
-QByteArray ThreadRingBuffer::get()
+QByteArray ThreadRingBuffer::get(quint32 maxSize)
 {
-    if (isEmpty()){
-        notEmpty.wait();
+    QMutexLocker locker(&mutex);
+    QByteArray result;
+
+    // 等待缓冲区有数据
+    while (buffers.isEmpty()) {
+        notEmptyCond.wait(&mutex, 100);
     }
-    quint32 size = buffers.size();
-    QByteArray res;
-    for (int i=0;i<size;i++){
-        res += buffers.get();
-        notFull.set();
+
+    // 读取数据（不超过请求大小或可用数据量）
+    const quint32 readSize = qMin(maxSize, static_cast<quint32>(buffers.size()));
+    nowBlockSize = readSize;
+    for (quint32 i = 0; i < readSize; ++i) {
+        result.append(buffers.get());
     }
-    if (isEmpty()) {
-        notEmpty.clear();
+
+    // 通知可能等待的生产者
+    if (!buffers.isFull()) {
+        notFullCond.wakeAll();
     }
-    return res;
+
+    return result;
 }
 
 QByteArray ThreadRingBuffer::peek()
 {
+    QMutexLocker locker(&mutex);
     return buffers.peek();
 }
 
 size_t ThreadRingBuffer::size() const
 {
+    QMutexLocker locker(&mutex);
     return buffers.size();
 }
 
 void ThreadRingBuffer::clear()
 {
-    return buffers.clear();
+    QMutexLocker locker(&mutex);
+    buffers.clear();
+
+    // 重置所有等待条件
+    notFullCond.wakeAll();
+    if (buffers.isEmpty()) {
+        notEmptyCond.wakeAll();
+    }
 }
+
+
+
 
 QTNETWORKNG_NAMESPACE_END

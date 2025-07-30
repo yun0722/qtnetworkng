@@ -2,6 +2,7 @@
 #define QTNG_MSGPACK_H
 
 #include <limits>
+#include <qdebug.h>
 #include <type_traits>
 #include <QtCore/qvariant.h>
 #include <QtCore/qiodevice.h>
