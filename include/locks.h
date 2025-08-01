@@ -628,7 +628,8 @@ inline T MultiQueueType<T, EventType, ReadWriteLockType>::tryWait()
 }
 class RingBuffer{
 public:
-    explicit RingBuffer(size_t capacity);
+    explicit RingBuffer(size_t capacity = 1024*64);
+    RingBuffer(const RingBuffer & r);
     inline bool isEmpty() const {
         return readPtr.load(std::memory_order_acquire) == writePtr.load(std::memory_order_relaxed);
     }
@@ -638,6 +639,7 @@ public:
     bool put(char data);
     void putForcedly(const QByteArray &data);
     char get();
+    QByteArray getBytes();
     QByteArray peek();
     size_t size() const;
     void clear();
@@ -712,6 +714,59 @@ public:
     alignas(64) std::atomic<quint32> writePtr;
 
 };
+
+class RingBufferBlock{
+public:
+    explicit RingBufferBlock(int capacity = 1024);
+    RingBufferBlock(const RingBufferBlock &r);
+    quint32 put(QByteArray &data);
+    bool put(const char & data);
+    QByteArray get();
+    inline bool isEmpty() const
+    {
+        return offset == 0;
+    }
+    inline bool isFull() const
+    {
+        return offset >= mCapacity;
+    }
+    void clear();
+private:
+    int mCapacity;
+    int offset;
+    QVector<char> block;
+};
+
+class LockFreeRingBufferBasicBlock {
+public:
+    explicit LockFreeRingBufferBasicBlock(size_t capacity = 1024);
+    bool put(const QByteArray &data);
+    void putForcedly(const QByteArray &data);
+    QByteArray get();
+    QByteArray peek();
+    size_t size() const;
+    void clear();
+
+    inline bool isEmpty() const {
+        return readPtr.load(std::memory_order_acquire) == writePtr.load(std::memory_order_relaxed);
+    }
+    inline bool isFull() const {
+        return (writePtr.load(std::memory_order_relaxed) + 1 - readPtr.load(std::memory_order_acquire)) > mCapacity;
+    }
+
+public:
+    ThreadEvent notEmpty;
+    ThreadEvent notFull;
+public:
+    quint32 mCapacity;
+    QVector<RingBuffer> buffers;
+    quint32 mask;
+    alignas(64) std::atomic<quint32> readPtr;
+    alignas(64) std::atomic<quint32> writePtr;
+
+};
+
+
 QTNETWORKNG_NAMESPACE_END
 
 #endif  // QTNG_LOCKS_H

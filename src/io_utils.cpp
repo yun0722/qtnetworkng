@@ -458,7 +458,9 @@ public:
 public:
     Pipe * const q_ptr;
     //ThreadQueue<QByteArray> queue;
-    ThreadRingBuffer queue;
+    //LockFreeRingBuffer queue;
+    //ThreadRingBuffer queue;
+    LockFreeRingBufferBasicBlock queue;
     QAtomicInteger<bool> closed;
     const qint32 maxBufferSize;
     qint8 debugLevel;
@@ -704,7 +706,7 @@ public:
         if (pp.isNull()) {
             return 0;
         }
-        qint64 bytesInQueue = pp->queue.nowBlockSize;
+        qint64 bytesInQueue = pp->queue.peek().size();
         // QIODevice::bytesAvailable() can be greater than 0 when peek() is called.
         return localBuffer.size() - offset + bytesInQueue + QIODevice::bytesAvailable();
     }
@@ -769,7 +771,7 @@ public:
         if (pp->closed) {
             return false;
         }
-        //pp->queue.notEmpty.tryWait(msecs < 0 ? UINT_MAX : msecs);
+        pp->queue.notEmpty.tryWait(msecs < 0 ? UINT_MAX : msecs);
         return true;
     }
 public:
@@ -824,7 +826,7 @@ public:
         if (pp->closed) {
             return 0;
         }
-        return qMax(pp->maxBufferSize - pp->queue.nowBlockSize - this->localBuffer.size(), 0);
+        return qMax(pp->maxBufferSize - pp->queue.peek().size() - this->localBuffer.size(), 0);
     }
 
     virtual bool canReadLine() const override { return false; }
@@ -888,11 +890,10 @@ public:
         if (localBuffer.size() < pp->maxBufferSize) {
             return true;
         }
-        // if (pp->queue.notFull.isSet()) {
-        //     return true;
-        // }
-        // return pp->queue.notFull.tryWait(msecs < 0 ? UINT_MAX: msecs);
-        return true;
+        if (pp->queue.notFull.isSet()) {
+            return true;
+        }
+        return pp->queue.notFull.tryWait(msecs < 0 ? UINT_MAX: msecs);
     }
 
     virtual bool waitForReadyRead(int) override { return false; }

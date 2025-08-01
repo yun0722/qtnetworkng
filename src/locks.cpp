@@ -876,11 +876,12 @@ bool LockFreeRingBuffer::put(const QByteArray &data) {
         notFull.wait();
     }
     quint32 writeIndex = writePtr.load(std::memory_order_relaxed);
-    bool wasFull = isFull();
     buffers[writeIndex & mask] = data;
     writePtr.store(writeIndex + 1, std::memory_order_release);
 
-    if (wasFull) notFull.set();
+    if (isFull()) {
+        notFull.clear();
+    }
     notEmpty.set();
     return true;
 }
@@ -926,6 +927,15 @@ RingBuffer::RingBuffer(size_t capacity)
     writePtr.store(0, std::memory_order_relaxed);
 }
 
+RingBuffer::RingBuffer(const RingBuffer &r)
+{
+    this->mCapacity = r.mCapacity;
+    this->mask = r.mask;
+    this->buffers = r.buffers;
+    this->readPtr.store(0,std::memory_order_relaxed);
+    this->writePtr.store(0,std::memory_order_relaxed);
+}
+
 bool RingBuffer::put(char data)
 {
     if (isFull()){
@@ -963,6 +973,14 @@ char RingBuffer::get()
     char data = buffers[readIndex & mask];
     readPtr.store(readIndex + 1, std::memory_order_release);
     return data;
+}
+
+QByteArray RingBuffer::getBytes()
+{
+    if (isEmpty()){
+        return QByteArray();
+    }
+    return QByteArray::fromRawData(buffers.constData()+0,this->size());
 }
 
 QByteArray RingBuffer::peek()
@@ -1094,6 +1112,131 @@ void ThreadRingBuffer::clear()
     if (buffers.isEmpty()) {
         notEmptyCond.wakeAll();
     }
+}
+
+RingBufferBlock::RingBufferBlock(int capacity)
+    : mCapacity(capacity)
+    , offset(0)
+{
+    block.resize(mCapacity);
+}
+
+RingBufferBlock::RingBufferBlock(const RingBufferBlock &r)
+{
+    this->mCapacity = r.mCapacity;
+    this->block = r.block;
+    this->offset = r.offset;
+}
+
+bool RingBufferBlock::put(const char &data)
+{
+    if (isFull()){
+        return false;
+    }
+    block[offset] =  data;
+    offset++;
+    return true;
+}
+
+QByteArray RingBufferBlock::get()
+{
+    return QByteArray::fromRawData(block.constData()+0,offset+1);
+}
+
+void RingBufferBlock::clear()
+{
+    offset = 0;
+}
+
+LockFreeRingBufferBasicBlock::LockFreeRingBufferBasicBlock(size_t capacity)
+    : mCapacity(capacity)
+{
+    size_t size = 1;
+    while (size < capacity)
+        size *= 2;
+    buffers.resize(size);
+    mask = size - 1;
+    readPtr.store(0, std::memory_order_relaxed);
+    writePtr.store(0, std::memory_order_relaxed);
+    notEmpty.clear();
+    notFull.set();
+}
+
+bool LockFreeRingBufferBasicBlock::put(const QByteArray &data)
+{
+    while (isFull()){
+        notFull.wait();
+    }
+    quint32 writeIndex = writePtr.load(std::memory_order_relaxed);
+    buffers[writeIndex&mask].clear();
+    for (const char c :  data){
+        if (!buffers[writeIndex & mask].put(c)){
+            while (isFull()){
+                notFull.wait();
+            }
+            writeIndex++;
+        }
+    }
+    writePtr.store(writeIndex+1,std::memory_order_release);
+    if (isFull()) {
+        notFull.clear();
+    }
+    notEmpty.set();
+    return true;
+}
+
+void LockFreeRingBufferBasicBlock::putForcedly(const QByteArray &data)
+{
+    quint32 writeIndex = writePtr.load(std::memory_order_relaxed);
+    for (const char c :  data){
+        if (!buffers[writeIndex & mask].put(c)){
+            writeIndex++;
+        }
+    }
+    writePtr.store(writeIndex+1,std::memory_order_release);
+    if (isFull()) {
+        notFull.clear();
+    }
+    notEmpty.set();
+}
+
+QByteArray LockFreeRingBufferBasicBlock::get()
+{
+    while (isEmpty()){
+        notEmpty.wait();
+    }
+    quint32 readIndex = readPtr.load(std::memory_order_acquire);
+    QByteArray res = buffers[readIndex & mask].getBytes();
+    buffers[readIndex&mask].clear();
+    readPtr.store(readIndex+1,std::memory_order_release);
+    if (isEmpty()){
+        notEmpty.clear();
+    }
+    notFull.set();
+    return res;
+}
+
+QByteArray LockFreeRingBufferBasicBlock::peek()
+{
+    if (isEmpty()){
+        return QByteArray();
+    }
+    quint32 readIndex = readPtr.load(std::memory_order_acquire);
+    QByteArray res = buffers[readIndex & mask].peek();
+    return res;
+}
+
+size_t LockFreeRingBufferBasicBlock::size() const
+{
+    return writePtr.load(std::memory_order_relaxed) - readPtr.load(std::memory_order_acquire);
+}
+
+void LockFreeRingBufferBasicBlock::clear()
+{
+    readPtr.store(0, std::memory_order_relaxed);
+    writePtr.store(0, std::memory_order_relaxed);
+    notEmpty.clear();
+    notFull.set();
 }
 
 
