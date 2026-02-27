@@ -39,9 +39,9 @@ public:
     void setSocketProxy(QSharedPointer<SocketProxy> proxy);
     void setHttpProxy(QSharedPointer<HttpProxy> proxy);
 private:
-    ConnectionPoolItem &getItem(const QUrl &url);
+    QSharedPointer<ConnectionPoolItem> getItem(const QUrl &url);
 public:
-    QMap<QUrl, ConnectionPoolItem> items;
+    QMap<QUrl, QSharedPointer<ConnectionPoolItem>> items;
     QSharedPointer<SocketDnsCache> dnsCache;
     QSharedPointer<BaseProxySwitcher> proxySwitcher;
 #ifndef QTNG_NO_CRYPTO

@@ -301,11 +301,8 @@ Database::iterator Database::insert(const QByteArray &key, const QByteArray &val
     if (itor.isEnd()) {
         return itor;
     }
-    if (itor.d_ptr->mdbValue.mv_size == 0) {
-        return end();
-    }
     if (static_cast<size_t>(value.size()) != itor.d_ptr->mdbValue.mv_size) {
-        qtng_warning << "setting value is too large for lmdb reserved key-value.";
+        qtng_warning << "setting value size mismatch for lmdb reserved key-value.";
     }
     size_t minSize = qMin(static_cast<size_t>(value.size()), itor.d_ptr->mdbValue.mv_size);
     memcpy(itor.d_ptr->mdbValue.mv_data, value.constData(), minSize);
@@ -318,17 +315,18 @@ Database::iterator Database::reserve(const QByteArray &key, size_t size)
         return LmdbIterator(nullptr);
     }
 
+    if (size == 0) {
+        return LmdbIterator(nullptr);
+    }
+
     MDB_cursor *cursor = d_ptr->makeCursor();
     if (!cursor) {
         return LmdbIterator(nullptr);
     }
 
-    QVarLengthArray<char, 1024> keyBuf;
-    keyBuf.append(key.constData(), key.size());
-
     MDB_val mdbKey, mdbData;
-    mdbKey.mv_size = keyBuf.size();
-    mdbKey.mv_data = keyBuf.data();
+    mdbKey.mv_size = key.size();
+    mdbKey.mv_data = (void *)key.constData();
     mdbData.mv_size = size;
     mdbData.mv_data = NULL;
 
@@ -462,13 +460,14 @@ int Database::remove(const QByteArray &key)
     return 1;
 }
 
-Database::iterator Database::erase(const Database::iterator &itor)
+Database::iterator Database::erase(Database::iterator &itor)
 {
     if (itor.isEnd()) {
         return LmdbIterator(nullptr);
     }
 
     MDB_cursor *cursor = itor.d_ptr->cursor;
+    itor.d_ptr->cursor = nullptr;
     const QByteArray& key = itor.d_ptr->key;
 
     int rt = mdb_cursor_del(cursor, 0);

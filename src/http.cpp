@@ -765,37 +765,40 @@ ConnectionPool::~ConnectionPool()
     delete operations;
 }
 
-ConnectionPoolItem &ConnectionPool::getItem(const QUrl &url)
+QSharedPointer<ConnectionPoolItem> ConnectionPool::getItem(const QUrl &url)
 {
     const QUrl &h = hostOnly(url);
-    ConnectionPoolItem &item = items[h];
-    item.lastUsed = QDateTime::currentDateTimeUtc();
-    if (item.semaphore.isNull()) {
-        item.semaphore.reset(new Semaphore(maxConnectionsPerServer));
+    QSharedPointer<ConnectionPoolItem> &item = items[h];
+    if (item.isNull()) {
+        item.reset(new ConnectionPoolItem());
+    }
+    item->lastUsed = QDateTime::currentDateTimeUtc();
+    if (item->semaphore.isNull()) {
+        item->semaphore.reset(new Semaphore(maxConnectionsPerServer));
     }
     return item;
 }
 
 QSharedPointer<Semaphore> ConnectionPool::getSemaphore(const QUrl &url)
 {
-    ConnectionPoolItem &item = getItem(url);
-    return item.semaphore;
+    QSharedPointer<ConnectionPoolItem> item = getItem(url);
+    return item->semaphore;
 }
 
 void ConnectionPool::recycle(const QUrl &url, QSharedPointer<SocketLike> connection)
 {
-    ConnectionPoolItem &item = getItem(url);
-    if (item.connections.size() < maxConnectionsPerServer) {
-        item.connections.append(connection);
+    QSharedPointer<ConnectionPoolItem> item = getItem(url);
+    if (item->connections.size() < maxConnectionsPerServer) {
+        item->connections.append(connection);
     }
 }
 
 QSharedPointer<SocketLike> ConnectionPool::oldConnectionForUrl(const QUrl &url)
 {
-    ConnectionPoolItem &item = getItem(url);
+    QSharedPointer<ConnectionPoolItem> item = getItem(url);
 
-    while (!item.connections.isEmpty()) {
-        QSharedPointer<SocketLike> connection = item.connections.takeFirst();
+    while (!item->connections.isEmpty()) {
+        QSharedPointer<SocketLike> connection = item->connections.takeFirst();
         if (!connection->isValid()) {
             continue;
         }
@@ -878,10 +881,10 @@ void ConnectionPool::removeUnusedConnections()
             return;
         }
         const QDateTime &now = QDateTime::currentDateTimeUtc();
-        QMap<QUrl, ConnectionPoolItem> newItems;
-        for (QMap<QUrl, ConnectionPoolItem>::const_iterator itor = items.constBegin(); itor != items.constEnd();
+        QMap<QUrl, QSharedPointer<ConnectionPoolItem>> newItems;
+        for (QMap<QUrl, QSharedPointer<ConnectionPoolItem>>::const_iterator itor = items.constBegin(); itor != items.constEnd();
              ++itor) {
-            if (itor.value().lastUsed.secsTo(now) < timeToLive || itor.value().semaphore->isUsed()) {
+            if (itor.value()->lastUsed.secsTo(now) < timeToLive || itor.value()->semaphore->isUsed()) {
                 newItems.insert(itor.key(), itor.value());
             }
         }

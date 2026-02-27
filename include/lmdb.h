@@ -137,7 +137,7 @@ public:
     const_iterator constBegin() const;
     iterator end();
     const_iterator constEnd() const;
-    iterator erase(const iterator &itor);
+    iterator erase(iterator &itor);
     iterator find(const QByteArray &key);
     const_iterator constFind(const QByteArray &key) const;
     const_iterator lowerBound(const QByteArray &key) const;
