@@ -366,8 +366,9 @@ bool Condition::wait(quint32 msecs)
 {
     Q_D(Condition);
     QSharedPointer<Lock> waiter(new Lock());
-    if (!waiter->tryAcquire())
+    if (!waiter->tryAcquire(0)) {
         return false;
+    }
     d->waiters.append(waiter);
 
     bool ok = false;
@@ -493,7 +494,7 @@ bool EventPrivate::wait(quint32 msecs)
                 break;
             }
             elapsed = timer.elapsed();
-            if (msecs >= elapsed) {
+            if (elapsed >= msecs) {
                 return false;
             }
         }

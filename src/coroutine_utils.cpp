@@ -1,4 +1,5 @@
 #include <QtCore/qprocess.h>
+#include <QtCore/qscopeguard.h>
 #ifdef Q_OS_WIN
 #include <windows.h>
 #else
@@ -46,11 +47,17 @@ DeferCallThread::DeferCallThread(std::function<void()> makeResult, QSharedPointe
 
 void DeferCallThread::run()
 {
-    makeResult();
-    if (!eventloop.isNull()) {
-        eventloop->callLaterThreadSafe(100, new DeleteLaterFunctor<DeferCallThread>(this));
+    auto clean = qScopeGuard([this] {
+        if (eventloop.isNull()) {
+            return;
+        }
         eventloop->callLaterThreadSafe(0, new MarkDoneFunctor(done));
-    }
+        eventloop->callLaterThreadSafe(100, new LambdaFunctor([this] {
+            this->wait();
+            delete this;
+        }));
+    });
+    makeResult();
 }
 
 class CoroutineThreadPrivate : public BaseCoroutine

@@ -110,8 +110,9 @@ ARG1 qAwait(const Obj *obj, const typename QtPrivate::FunctionPointer<void (Obj:
     const QMetaObject::Connection connection =
             QObject::connect(obj, signal, &helper, &QAwaitHelper1<ARG1>::call, Qt::DirectConnection);
     try {
-        return event->tryWait();
+        ARG1 result = event->tryWait();
         QObject::disconnect(connection);
+        return result;
     } catch (...) {
         QObject::disconnect(connection);
         throw;
@@ -130,7 +131,7 @@ struct QAwaitHelper : QObject
 };
 
 template<typename Obj, typename ARG1, typename ARG2, typename... ARGS>
-std::tuple<ARG1, ARGS...>
+std::tuple<ARG1, ARG2, ARGS...>
 qAwait(const Obj *obj, const typename QtPrivate::FunctionPointer<void (Obj::*)(ARG1, ARG2, ARGS...)>::Function signal)
 {
     QSharedPointer<ValueEvent<std::tuple<ARG1, ARG2, ARGS...>>> event(
@@ -139,8 +140,9 @@ qAwait(const Obj *obj, const typename QtPrivate::FunctionPointer<void (Obj::*)(A
     const QMetaObject::Connection connection =
             QObject::connect(obj, signal, &helper, &QAwaitHelper<ARG1, ARG2, ARGS...>::call, Qt::DirectConnection);
     try {
-        return event->tryWait();
+        std::tuple<ARG1, ARG2, ARGS...> result = event->tryWait();
         QObject::disconnect(connection);
+        return result;
     } catch (...) {
         QObject::disconnect(connection);
         throw;
@@ -428,10 +430,10 @@ public:
     virtual ~ThreadPool() override;
 public:
     template<typename T, typename S>
-    QList<T> map(std::function<T(S)> func, const QList<S> &l);
+    QList<T> map(std::function<T(S)> func, const QList<S> &l, int chunk = INT16_MAX);
 
     template<typename S>
-    void each(std::function<void(S)> func, const QList<S> &l);
+    void each(std::function<void(S)> func, const QList<S> &l, int chunk = INT16_MAX);
 
     template<typename T, typename Func, typename... ARGS>
     T apply(Func func, ARGS... s);
@@ -451,23 +453,23 @@ private:
 };
 
 template<typename T, typename S>
-QList<T> ThreadPool::map(std::function<T(S)> func, const QList<S> &l)
+QList<T> ThreadPool::map(std::function<T(S)> func, const QList<S> &l, int chunk/* = INT16_MAX*/)
 {
     std::function<T(S)> f = [this, func] (S s) -> T {
         std::function<T()> wrapped = [s, func] () -> T { return func(s); };
         return call(wrapped);
     };
-    return CoroutineGroup::map(f, l);
+    return CoroutineGroup::map(f, l, chunk);
 }
 
 template<typename S>
-void ThreadPool::each(std::function<void(S)> func, const QList<S> &l)
+void ThreadPool::each(std::function<void(S)> func, const QList<S> &l, int chunk/* = INT16_MAX*/)
 {
     std::function<void(S)> f = [this, func] (S s) {
         std::function<void()> wrapped = [s, func] { func(s); };
         call(wrapped);
     };
-    CoroutineGroup::each(f, l);
+    CoroutineGroup::each(f, l, chunk);
 }
 
 template<typename T, typename Func, typename... ARGS>

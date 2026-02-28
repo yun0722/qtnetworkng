@@ -1,5 +1,5 @@
-﻿# target_sources require cmake 3.1
-cmake_minimum_required(VERSION 3.1.0...3.17 FATAL_ERROR)
+# target_sources require cmake 3.1
+cmake_minimum_required(VERSION 3.1.0...3.28 FATAL_ERROR)
 
 project(qtnetworkng LANGUAGES C CXX ASM VERSION 1.0.0)
 
@@ -318,7 +318,7 @@ if(${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
     target_compile_definitions(qtnetworkng PRIVATE -DQTNETWORKNG_USE_WIN=1)
     target_sources(qtnetworkng PRIVATE src/eventloop_win.cpp)
 elseif(UNIX)
-    target_compile_definitions(qtnetworkng PRIVATE -DQTNETWOKRNG_USE_EV)
+    target_compile_definitions(qtnetworkng PRIVATE -DQTNETWOKRNG_USE_EV=1)
     target_compile_definitions(qtnetworkng PRIVATE -DEV_USE_4HEAP=1 -DEV_VERIFY=0 -DQTNG_EV_ASSERT=0)
     check_function_exists(kqueue HAVE_KQUEUE)
     check_function_exists(epoll_ctl HAVE_EPOLL)

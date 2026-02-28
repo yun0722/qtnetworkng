@@ -1,3 +1,6 @@
+#ifndef QTNG_LMDB_H
+#define QTNG_LMDB_H
+
 #include <QtCore/qobject.h>
 #include <QtCore/qpointer.h>
 #include <QtCore/qstring.h>
@@ -134,7 +137,7 @@ public:
     const_iterator constBegin() const;
     iterator end();
     const_iterator constEnd() const;
-    iterator erase(const iterator &itor);
+    iterator erase(iterator &itor);
     iterator find(const QByteArray &key);
     const_iterator constFind(const QByteArray &key) const;
     const_iterator lowerBound(const QByteArray &key) const;
@@ -154,12 +157,16 @@ public:
     inline QByteArray lastKey() const
     {
         Q_ASSERT(!isEmpty());
-        return constEnd().key();
+        const_iterator it = constEnd();
+        --it;
+        return it.key();
     }
     inline QByteArray lastValue() const
     {
         Q_ASSERT(!isEmpty());
-        return constEnd().value();
+        const_iterator it = constEnd();
+        --it;
+        return it.value();
     }
 public:
     inline qint64 count() const { return size(); }
@@ -196,6 +203,8 @@ public:
     Database &db(const QString &name);
     QSharedPointer<Transaction> sub();
     QSharedPointer<const Transaction> sub() const;
+    QSharedPointer<Transaction> fork();
+    QSharedPointer<const Transaction> fork() const;
     bool commit();
     void abort();
 private:
@@ -265,3 +274,5 @@ private:
 };
 
 QTNETWORKNG_NAMESPACE_END
+
+#endif  // QTNG_LMDB_H

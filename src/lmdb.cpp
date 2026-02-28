@@ -301,11 +301,8 @@ Database::iterator Database::insert(const QByteArray &key, const QByteArray &val
     if (itor.isEnd()) {
         return itor;
     }
-    if (itor.d_ptr->mdbValue.mv_size == 0) {
-        return end();
-    }
     if (static_cast<size_t>(value.size()) != itor.d_ptr->mdbValue.mv_size) {
-        qtng_warning << "setting value is too large for lmdb reserved key-value.";
+        qtng_warning << "setting value size mismatch for lmdb reserved key-value.";
     }
     size_t minSize = qMin(static_cast<size_t>(value.size()), itor.d_ptr->mdbValue.mv_size);
     memcpy(itor.d_ptr->mdbValue.mv_data, value.constData(), minSize);
@@ -318,17 +315,18 @@ Database::iterator Database::reserve(const QByteArray &key, size_t size)
         return LmdbIterator(nullptr);
     }
 
+    if (size == 0) {
+        return LmdbIterator(nullptr);
+    }
+
     MDB_cursor *cursor = d_ptr->makeCursor();
     if (!cursor) {
         return LmdbIterator(nullptr);
     }
 
-    QVarLengthArray<char, 1024> keyBuf;
-    keyBuf.append(key.constData(), key.size());
-
     MDB_val mdbKey, mdbData;
-    mdbKey.mv_size = keyBuf.size();
-    mdbKey.mv_data = keyBuf.data();
+    mdbKey.mv_size = key.size();
+    mdbKey.mv_data = (void *)key.constData();
     mdbData.mv_size = size;
     mdbData.mv_data = NULL;
 
@@ -462,13 +460,14 @@ int Database::remove(const QByteArray &key)
     return 1;
 }
 
-Database::iterator Database::erase(const Database::iterator &itor)
+Database::iterator Database::erase(Database::iterator &itor)
 {
     if (itor.isEnd()) {
         return LmdbIterator(nullptr);
     }
 
     MDB_cursor *cursor = itor.d_ptr->cursor;
+    itor.d_ptr->cursor = nullptr;
     const QByteArray& key = itor.d_ptr->key;
 
     int rt = mdb_cursor_del(cursor, 0);
@@ -541,22 +540,18 @@ bool Database::isEmpty() const
 
 qint64 Database::size() const
 {
-    MDB_cursor *cursor = d_ptr->makeCursor();
-    if (!cursor) {
-        return -1;
+    if (isNull()) {
+        return 0;
     }
-
-    mdb_size_t count;
-    int rt = mdb_cursor_count(cursor, &count);
-    mdb_cursor_close(cursor);
-
+    MDB_stat stat;
+    int rt = mdb_stat(d_ptr->txn, d_ptr->dbi, &stat);
     if (rt) {
 #if QTLMDB_DEBUG
-        qtng_warning << "can not count lmdb cursor:" << mdb_strerror(rt);
+        qtng_warning << "can not count lmdb:" << mdb_strerror(rt);
 #endif
         return -1;
     }
-    return count;
+    return stat.ms_entries;
 }
 
 Database::iterator Database::begin()
@@ -816,12 +811,53 @@ QSharedPointer<const Transaction> Transaction::sub() const
     return QSharedPointer<Transaction>(new Transaction(d));
 }
 
+static TransactionPrivate *makePrivateToWrite(MDB_env * const env)
+{
+    MDB_txn *txn;
+    unsigned int flags = 0;
+    int rt = mdb_txn_begin(env, NULL, flags, &txn);
+    if (rt) {
+#if QTLMDB_DEBUG
+        qtng_warning << "can not begin lmdb transaction:" << mdb_strerror(rt);
+#endif
+        return nullptr;
+    }
+    TransactionPrivate *d = new TransactionPrivate(env, txn, false);
+    return d;
+}
+
+QSharedPointer<Transaction> Transaction::fork()
+{
+    return QSharedPointer<Transaction>(new Transaction(makePrivateToWrite(d_ptr->env)));
+}
+
+
+static TransactionPrivate *makePrivateToRead(MDB_env * const env)
+{
+    MDB_txn *txn;
+    unsigned int flags = MDB_RDONLY;
+    int rt = mdb_txn_begin(env, NULL, flags, &txn);
+    if (rt) {
+#if QTLMDB_DEBUG
+        qtng_warning << "can not begin lmdb transaction:" << mdb_strerror(rt);
+#endif
+        return nullptr;
+    }
+    TransactionPrivate *d = new TransactionPrivate(env, txn, true);
+    return d;
+}
+
+QSharedPointer<const Transaction> Transaction::fork() const
+{
+    return QSharedPointer<const Transaction>(new Transaction(makePrivateToRead(d_ptr->env)));
+}
+
 bool Transaction::commit()
 {
     int rt = mdb_txn_commit(d_ptr->txn);
     d_ptr->dbs.clear();
     d_ptr->finished = true;
-    if (rt < 0) {
+    if (rt) {
 #if QTLMDB_DEBUG
         qtng_warning << "can not commit lmdb transaction:" << mdb_strerror(rt);
 #endif
@@ -845,31 +881,19 @@ Lmdb::~Lmdb()
 
 QSharedPointer<const Transaction> Lmdb::toRead()
 {
-    MDB_txn *txn;
-    unsigned int flags = MDB_RDONLY;
-    int rt = mdb_txn_begin(d_ptr->env, NULL, flags, &txn);
-    if (rt) {
-#if QTLMDB_DEBUG
-        qtng_warning << "can not begin lmdb transaction:" << mdb_strerror(rt);
-#endif
+    TransactionPrivate *d = makePrivateToRead(d_ptr->env);
+    if (!d) {
         return QSharedPointer<const Transaction>();
     }
-    TransactionPrivate *d = new TransactionPrivate(d_ptr->env, txn, true);
     return QSharedPointer<const Transaction>(new Transaction(d));
 }
 
 QSharedPointer<Transaction> Lmdb::toWrite()
 {
-    MDB_txn *txn;
-    unsigned int flags = 0;
-    int rt = mdb_txn_begin(d_ptr->env, NULL, flags, &txn);
-    if (rt) {
-#if QTLMDB_DEBUG
-        qtng_warning << "can not begin lmdb transaction:" << mdb_strerror(rt);
-#endif
+    TransactionPrivate *d = makePrivateToWrite(d_ptr->env);
+    if (!d) {
         return QSharedPointer<Transaction>();
     }
-    TransactionPrivate *d = new TransactionPrivate(d_ptr->env, txn, false);
     return QSharedPointer<Transaction>(new Transaction(d));
 }
 
