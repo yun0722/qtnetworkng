@@ -689,58 +689,92 @@ bool parseRecord(const QByteArray& packet, quint16& offset, Record& record)
 
 void writeRecord(QByteArray& packet, quint16& offset, Record& record, QMap<QByteArray, quint16>& nameMap)
 {
-	writeName(packet, offset, record.name(), nameMap);
-	writeInteger<quint16>(packet, offset, record.type());
-	writeInteger<quint16>(packet, offset, record.flushCache() ? 0x8001 : 1);
-	writeInteger<quint32>(packet, offset, record.ttl());
-	offset += 2;
-	QByteArray data;
-	switch (record.type()) {
-	case A:
-		writeInteger<quint32>(data, offset, record.address().toIPv4Address());
-		break;
-	case AAAA: {
-		HostAddress ipv6Addr = record.address().toIPv6Address();
-		data.append(reinterpret_cast<const char*>(&ipv6Addr), sizeof(HostAddress));
-		offset += data.length();
-		break;
-	}
-	case NSEC: {
-		quint8 length = record.bitmap().length();
-		writeName(data, offset, record.nextDomainName(), nameMap);
-		writeInteger<quint8>(data, offset, 0);
-		writeInteger<quint8>(data, offset, length);
-		data.append(reinterpret_cast<const char*>(record.bitmap().data(), length));
-		offset += length;
-		break;
-	}
-	case PTR:
-		writeName(data, offset, record.target(), nameMap);
-		break;
-	case SRV:
-		writeInteger<quint16>(data, offset, record.priority());
-		writeInteger<quint16>(data, offset, record.weight());
-		writeInteger<quint16>(data, offset, record.port());
-		writeName(data, offset, record.target(), nameMap);
-		break;
-	case TXT:
-		if (!record.attributes().count()) {
-			writeInteger<quint8>(data, offset, 0);
-			break;
-		}
-		for (auto i = record.attributes().constBegin();i != record.attributes().constEnd();++i) {
-			QByteArray entry = i.value().isNull() ? i.key() : i.key() + "=" + i.value();
-			writeInteger<quint8>(data, offset, entry.length());
-			data.append(entry);
-			offset += entry.length();
-		}
-		break;
-	default:
-		break;
-	}
-	offset -= 2;
-	writeInteger<quint16>(packet, offset, data.length());
-	packet.append(data);
+    // 写入记录头部
+    writeName(packet, offset, record.name(), nameMap);
+    writeInteger<quint16>(packet, offset, record.type());
+    writeInteger<quint16>(packet, offset, record.flushCache() ? 0x8001 : 1);
+    writeInteger<quint32>(packet, offset, record.ttl());
+
+            // 记录长度字段位置，并写入两字节占位（0）
+    quint16 lengthPos = offset;
+    writeInteger<quint16>(packet, offset, 0); // 占位，增加 offset 和 packet 大小
+
+            // 构造 RDATA 部分到临时缓冲区
+    QByteArray data;
+    quint16 dataOffset = 0;
+
+    switch (record.type()) {
+    case A: {
+        quint32 ipv4 = record.address().toIPv4Address();
+        writeInteger<quint32>(data, dataOffset, ipv4);
+        break;
+    }
+    case AAAA: {
+        IPv6Address ipv6 = record.address().toIPv6Address();  // 假设返回 Q_IPV6ADDR
+        // 如果 toIPv6Address 返回主机字节序，需要转换
+        for (int i = 0; i < 16; ++i) {
+            data.append(ipv6[i]);  // 直接追加，假设已经是网络序
+        }
+        break;
+    }
+    case NSEC: {
+        QByteArray nextNameData;
+        quint16 nextNameOffset = 0;
+        writeName(nextNameData, nextNameOffset, record.nextDomainName(), nameMap);
+        data.append(nextNameData);
+        data.append(char(0)); // 窗口块，固定0
+        data.append(char(record.bitmap().length()));
+        data.append(reinterpret_cast<const char*>(record.bitmap().data()), record.bitmap().length());
+        break;
+    }
+    case PTR: {
+        QByteArray targetData;
+        quint16 targetOffset = 0;
+        writeName(targetData, targetOffset, record.target(), nameMap);
+        data.append(targetData);
+        break;
+    }
+    case SRV: {
+        quint16 priority = qToBigEndian(record.priority());
+        quint16 weight = qToBigEndian(record.weight());
+        quint16 port = qToBigEndian(record.port());
+        data.append(reinterpret_cast<const char*>(&priority), 2);
+        data.append(reinterpret_cast<const char*>(&weight), 2);
+        data.append(reinterpret_cast<const char*>(&port), 2);
+        QByteArray targetData;
+        quint16 targetOffset = 0;
+        writeName(targetData, targetOffset, record.target(), nameMap);
+        data.append(targetData);
+        break;
+    }
+    case TXT: {
+        const auto& attrs = record.attributes();
+        for (auto it = attrs.begin(); it != attrs.end(); ++it) {
+            QByteArray entry = it.key();
+            if (!it.value().isNull())
+                entry += "=" + it.value();
+            data.append(char(entry.size()));
+            data.append(entry);
+        }
+        if (attrs.isEmpty()) {
+            data.append(char(0)); // 空 TXT 记录
+        }
+        break;
+    }
+    default:
+        // 未知类型，无数据
+        break;
+    }
+
+            // 将实际 RDATA 长度写回之前占位的长度字段（大端序）—— 直接修改 packet 中对应位置
+    quint16 dataLen = data.size();
+    quint16 dataLenNet = qToBigEndian<quint16>(dataLen);
+    memcpy(packet.data() + lengthPos, &dataLenNet, 2);
+
+            // 追加 RDATA 到报文末尾
+    packet.append(data);
+    // 更新外部偏移量到报文末尾
+    offset = packet.size();
 }
 
 bool fromPacket(const QByteArray& packet, Message& message)

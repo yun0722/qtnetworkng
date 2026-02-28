@@ -84,7 +84,7 @@ class Provider;
 class ProviderPrivate : public QObject {
 	Q_OBJECT
 public:
-	ProviderPrivate(QObject* parent, AbstractServer* server, HostName* hostname);
+        ProviderPrivate(QObject* parent, AbstractServer* server,HostName* hostname);
 	virtual ~ProviderPrivate();
 
 	void announce();

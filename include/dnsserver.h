@@ -83,7 +83,7 @@ class ProviderPrivate;
 class Provider :public QObject {
 	Q_OBJECT
 public:
-	Provider(AbstractServer* server, HostName* hostname, QObject* parent = 0);
+        Provider(AbstractServer* server,HostName* hostname, QObject* parent = 0);
 	void update(const Service& service);
 private:
 	ProviderPrivate* const d;

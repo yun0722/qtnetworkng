@@ -485,7 +485,7 @@ void Service::addAttribute(const QByteArray& key, const QByteArray& value)
 	d->attributes.insert(key, value);
 }
 
-ProviderPrivate::ProviderPrivate(QObject* parent, AbstractServer* server, HostName* hostname)
+ProviderPrivate::ProviderPrivate(QObject* parent, AbstractServer* server,HostName* hostname)
 	: QObject(parent),
 	server(server),
 	hostname(hostname),
